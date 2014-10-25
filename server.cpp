@@ -25,10 +25,13 @@
 #include "server.h"
 
 #include <arpa/inet.h>
-#include <unordered_map>
+#include <vector>
+#include <pthread.h>
+#include <errno.h>
 
 #include <iostream>
 
+extern int errno;
 using namespace::std;
 
 int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
@@ -131,6 +134,76 @@ char* server_init::get_ip(bool is_wifi)
 	cout << ip_w << endl;
 }
 
+bool client_data::judge_buf()
+{
+	//手动截出第一个命令
+	char* end_p = strchr(this->write, '\0');
+	char* word_p = strchr(this->write, ' ');
+	if (end_p-write <= word_p-write)
+		return false;
+	//命令长度
+	int str_len = word_p - this->write;
+	if (str_len <= 0)
+	      return false;
+
+	char str_c[15];
+	strncpy(str_c, word_p, str_len);
+	string cmd = str_c;
+//maybe has problem
+	if ((*this).fun_list[cmd] == NULL)
+	{
+		return false;
+	}
+	return true;
+//	
+
+}
+
+bool client_data::get()
+{
+	int ret;
+	ret = accept(this->data_fd, &(this->address), &(this->addr_length));
+	assert(ret < 0);
+
+	//解析后面的文件路径地址
+	//path_extract()
+	//打开文件，准备读取
+	while (1)
+	{
+
+	}
+
+	return false;
+}
+
+bool client_data::put()
+{
+	//解析后面的文件路径系统
+	//只要文件名
+	//path_extract_name()
+	//打开新文件准备写入
+
+	return false;
+}
+
+bool client_data::dir()
+{
+
+	//解析文件路径系统
+	//只要所有文件名
+	return false;
+}
+
+void* work_function(void* arg)
+{
+	//判断字符串，哈希找到函数并执行
+	client_data* client = (client_data*)arg;
+	client->judge_buf();
+
+	return NULL;
+}
+
+
 int main(int argc, char *argv[])
 {
 	if (argc != 2)
@@ -160,6 +233,8 @@ int main(int argc, char *argv[])
 	server->addfd(epollfd, listenfd_cmd);
 	server->addfd(epollfd, listenfd_data);
 
+	//用来通过文件描述符找客户端结构体
+	unordered_map<int, client_data*> fd_map;
 	while (1)
 	{
 		int number = epoll_wait(epollfd, events, MAX_EVENT_SIZE, -1);
@@ -172,9 +247,54 @@ int main(int argc, char *argv[])
 		for ( int i = 0; i < number; i++)
 		{
 			int sockfd = events[i].data.fd;
+			//新的套接字
 			if (sockfd == listenfd_cmd)
 			{
+
+				client_data* client = new client_data();
+				client->cmd_fd = accept(listenfd_cmd, (struct sockaddr*)&client->address, &client->addr_length);
+				if (client->cmd_fd < 0)
+				{
+					printf("errno is: %s\n", strerror(errno));
+					continue;
+				}
+				fd_map[client->cmd_fd] = client;
+				client->write = client->buf;
+				//根据接收到的命令处理
+				int ret = recv(sockfd, client->write, sizeof(client->buf), 0);
+				if (ret < 0)
+				{
+					cout << strerror(errno) << endl;
+					exit(1);
+				}
 				
+				//把传数据的套接字传过去方便传输
+				//switch ()
+				//get
+				//put
+				//dir
+				//命令传输较少，我们采用IO复用处理，文件传输较长，分出线程处理
+				pthread_t work_pthread;
+				ret = pthread_create(&work_pthread, NULL, work_function, (void*)&client);
+				assert(ret < 0);
+			}
+			//之前的套接字，有新的数据
+			else if (events[i].events & EPOLLIN)
+			{
+
+				int ret = recv(sockfd, fd_map[sockfd]->write, sizeof((fd_map[sockfd])->buf), 0);
+				if (ret < 0)
+				{
+					cout << strerror(errno) << endl;
+					exit(1);
+				}
+				pthread_t work_pthread;
+				ret = pthread_create(&work_pthread, NULL, work_function, (void*)fd_map[sockfd]);
+				assert(ret < 0);
+			}
+			else 
+			{
+				cout << "进入非创建无数据，可能断开状态" << endl;
 			}
 		}
 	}

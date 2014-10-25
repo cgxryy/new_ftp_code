@@ -24,25 +24,61 @@
 #include <ifaddrs.h>
 #include <string.h>
 
+#include <unordered_map>
+#include <string>
+using namespace::std;
+
 const int MAX_BUF_SIZE = 1024;
 const int MAX_EVENT_SIZE = 1024;
 const int MAX_USERS = 1024;
 const int LISTEN_QUEUE_LEN = 5;
 
+//maybe no_use
+/*
+const int GET_NUMBER = 0;
+const int PUT_NUMBER = 1;
+const int DIR_NUMBER = 2;
+*/
+
+const char* GET = "get";
+const char* PUT = "put";
+const char* DIR = "dir";
+
+//代替上述写法
 class client_data
 {
 	public 
 		:
 		sockaddr_in address;
-		int addr_length;
+		socklen_t addr_length;
 		char* write;
 		char buf[MAX_BUF_SIZE];
 		int data_fd;
-
+		int cmd_fd;
+		/*
+		 * get
+		 * put
+		 * dir...
+		 * 通过字符串哈希——unordered_map就是泛型哈希 
+		 * 通过下面定义可以直接通过下标找到对应处理函数
+		 * */
 		client_data()
 		{
 			addr_length = sizeof(address);
+			
+			fun_list[GET] = &client_data::get;	
+			fun_list[PUT] = &client_data::put;
+			fun_list[DIR] = &client_data::dir;
 		}
+		bool judge_buf();
+
+	private
+		:
+		//由字符串直接映射函数体
+		unordered_map<string, bool (client_data::*)(void)> fun_list;
+		bool get();
+		bool put();
+		bool dir();
 };
 
 class server_init
