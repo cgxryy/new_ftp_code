@@ -45,6 +45,15 @@ const char* PUT = "put";
 const char* DIR = "dir";
 
 //代替上述写法
+//
+struct buf_data
+{
+	int32_t data;
+	bool 	end_flag;
+	char buf[1019]; //1024-4-1 = 1019
+};
+
+
 class client_data
 {
 	public 
@@ -52,9 +61,10 @@ class client_data
 		sockaddr_in address;
 		socklen_t addr_length;
 		char* write;
-		char buf[MAX_BUF_SIZE];
+	//	char buf[MAX_BUF_SIZE];
 		int data_fd;
 		int cmd_fd;
+		buf_data buf; 	//自定义数据结构
 		/*
 		 * get
 		 * put
@@ -76,9 +86,21 @@ class client_data
 		:
 		//由字符串直接映射函数体
 		unordered_map<string, bool (client_data::*)(void)> fun_list;
+
 		bool get();
 		bool put();
 		bool dir();
+};
+
+class buf_tool
+{
+	public 
+		:
+		buf_tool()
+		{
+		}
+		bool extract_cmd(char* start, int* length);
+		char* skip(char* start);
 };
 
 class server_init

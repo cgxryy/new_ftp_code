@@ -20,6 +20,8 @@
 #include <assert.h>
 #include <stdlib.h>
 
+#include <sys/stat.h>
+#include <libgen.h>
 #include <fcntl.h>
 #include <sys/epoll.h>
 #include "server.h"
@@ -32,6 +34,7 @@
 #include <iostream>
 
 extern int errno;
+
 using namespace::std;
 
 int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
@@ -134,16 +137,35 @@ char* server_init::get_ip(bool is_wifi)
 	cout << ip_w << endl;
 }
 
+bool buf_tool::extract_cmd(char* start, int* length)
+{
+	char* end_p = strchr(start, '\0');
+	char* word_p = strchr(start, ' ');
+	if (end_p-start <= word_p-start)
+		return false;
+	
+	//命令长度
+	int str_len = word_p - start;
+	if (str_len <= 0)
+	      return false;
+	else *length = str_len;
+
+	return true;
+}
+
+char* buf_tool::skip(char* start)
+{
+	while ((start == ' ' || start == '\t' || start || == '\n') && (start != NULL))
+	      start++;
+
+	return start;
+}
+
 bool client_data::judge_buf()
 {
-	//手动截出第一个命令
-	char* end_p = strchr(this->write, '\0');
-	char* word_p = strchr(this->write, ' ');
-	if (end_p-write <= word_p-write)
-		return false;
-	//命令长度
-	int str_len = word_p - this->write;
-	if (str_len <= 0)
+	buf_tool tool;
+	int str_len;
+	if (!tool.extract_cmd(this->write, &str_len))
 	      return false;
 
 	char str_c[15];
@@ -166,11 +188,41 @@ bool client_data::get()
 	assert(ret < 0);
 
 	//解析后面的文件路径地址
-	//path_extract()
+	buf_tool tool;
+	char* cmd;
+	int str_len;
+	if (!tool.extract_cmd(this->write, &str_len))
+	      return false;
+	
+	cmd = tool.skip(this->write + str_len);
+	if (!tool.extract_cmd(cmd, &str_len))
+	      return false;
+
+	//提取出第二个命令参数
+	char cmd_str[200];
+	strncpy(cmd_str, cmd, str_len);
+	cmd_str[str_len] = '\0';
+
+	//抽路径
+	const char* path = dirname(cmd_str);
+	char tempdir[200];
+	char* nowpath = getcwd(tempdir, sizeof(tempdir));
+	//const char* filename = basename(cmd_str);
+
+	chdir(path);
+	cout << "now at " << path << endl;
 	//打开文件，准备读取
+	ret = open(cmd_str, O_RDWR, 0644);
+	if (ret < 0)
+	{
+		cout << strerror(errno) << endl;
+		return 1;
+	}
+
+	double sum_length = 0;
 	while (1)
 	{
-
+		ret = read(file);
 	}
 
 	return false;
