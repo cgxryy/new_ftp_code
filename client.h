@@ -25,8 +25,6 @@
 #include <string.h>
 #include "package.h"
 
-const char* server_ip = "123.123.123.123";
-
 class client_init
 {
 	public 
@@ -50,10 +48,13 @@ class client_init
 		}
 
 		//返回值初始化后文件描述符
-	 	void init_addr();
-
+	 	int init_addr();
+		bool connect_timelimit(int sockfd, struct sockaddr* address, int time, int count);
+		bool judge_cmd();
+		bool recv_timelimit();
 	private
 		:
+			
 
 
 };

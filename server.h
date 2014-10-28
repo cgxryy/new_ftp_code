@@ -101,4 +101,3 @@ class server_init
 		int  init_fd_addr(bool is_wifi, bool is_cmd); //设置服务器套接字并绑定监听 产生一切都就绪的文件描述符
 		void addfd(int epollfd, int fd);//在epoll中添加描述符
 };
-
