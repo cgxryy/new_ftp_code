@@ -51,13 +51,12 @@ int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
 		port = port_data;
 		address = &data_address;
 	}
-	const char* ip = get_ip(is_wifi);
 	assert(ip != NULL);
 
 	int ret = 0;
 	bzero(address, sizeof(cmd_address));
 	address->sin_family = AF_INET;
-	inet_pton(AF_INET, ip, &address->sin_addr);
+	inet_pton(AF_INET, target_ip, &address->sin_addr);
 	address->sin_port = htons(port);
 
 	int listenfd = socket(PF_INET, SOCK_STREAM, 0);
@@ -136,7 +135,7 @@ char* server_init::get_ip(bool is_wifi)
 	cout << ip << endl;
 	cout << ip_w << endl;
 }
-
+/*
 bool buf_tool::extract_cmd(char* start, int* length)
 {
 	char* end_p = strchr(start, '\0');
@@ -160,70 +159,80 @@ char* buf_tool::skip(char* start)
 
 	return start;
 }
-
+*/
 bool client_data::judge_buf()
 {
-	buf_tool tool;
-	int str_len;
-	if (!tool.extract_cmd(this->write, &str_len))
-	      return false;
-
-	char str_c[15];
-	strncpy(str_c, word_p, str_len);
-	string cmd = str_c;
-//maybe has problem
-	if ((*this).fun_list[cmd] == NULL)
+	buf_data package;
+	int ret = recv(cmd_fd, (void*)&package, sizeof(package), 0);
+	if (ret < 0)
 	{
+		cout << strerror(errno) << endl;
 		return false;
 	}
-	return true;
-//	
+	if (package.type > MAX_NUMBER)
+	      return false;
+	//回复一个收到确认包
+	buf_data reply;
+	reply.ack_flag = true;
+	ret = send(cmd_fd, (void*)&reply, sizeof(reply), 0);
 
+	bool err_flag = fun_list[package.type];
+	if (!err_flag)
+		return false;
+
+	return true;
 }
 
 bool client_data::get()
 {
 	int ret;
-	ret = accept(this->data_fd, &(this->address), &(this->addr_length));
+	ret = accept(this->data_fd, (struct sockaddr*)&(this->address), &(this->addr_length));
 	assert(ret < 0);
 
-	//解析后面的文件路径地址
-	buf_tool tool;
-	char* cmd;
-	int str_len;
-	if (!tool.extract_cmd(this->write, &str_len))
-	      return false;
-	
-	cmd = tool.skip(this->write + str_len);
-	if (!tool.extract_cmd(cmd, &str_len))
-	      return false;
 
-	//提取出第二个命令参数
-	char cmd_str[200];
-	strncpy(cmd_str, cmd, str_len);
-	cmd_str[str_len] = '\0';
 
-	//抽路径
-	const char* path = dirname(cmd_str);
-	char tempdir[200];
-	char* nowpath = getcwd(tempdir, sizeof(tempdir));
-	//const char* filename = basename(cmd_str);
+//	char buf[MAX_BUFFER];
+//	strncpy(buf, this->client_package.buf, sizeof(client_package.buf));
+	cout << "get package_path:     " << client_package.buf << endl;
 
-	chdir(path);
-	cout << "now at " << path << endl;
+	//保留当前路径，用于传输完，恢复
+	char now_path[MAX_BUFFER];
+	getcwd(now_path, sizeof(now_path));
+//
+//预留一个类给处理路径， 确保文件都在一个指定文件夹不会越权
+//
+	chdir(dirname(client_package.buf));
+	cout << "now at " << dirname(client_package.buf) << endl;
 	//打开文件，准备读取
-	ret = open(cmd_str, O_RDWR, 0644);
-	if (ret < 0)
+	int file_fd = open(basename(client_package.buf), O_RDWR, 0644);
+	if (file_fd < 0)
 	{
 		cout << strerror(errno) << endl;
-		return 1;
+		return false;
 	}
 
-	double sum_length = 0;
+	buf_data package;
 	while (1)
 	{
-		ret = read(file);
+		package.clear();
+		ret = read(file_fd, package.buf, sizeof(package.buf));
+		if (ret < 0)
+		{
+			break;
+		}
+		if (ret == 0)
+		      package.end_flag = true;
+		package.length = ret;
+	
+		ret = send(data_fd, (void*)&package, sizeof(package), 0);
+		if (ret < 0)
+		{
+			break;
+		}
+		if(package.end_flag)
+		      return true;
 	}
+
 
 	return false;
 }
@@ -264,6 +273,9 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	//*********
+	//初始化部分
+	//*********
 	bool is_wifi;
 	if (atoi(argv[1]) == 'y')
 	      is_wifi = true;
@@ -277,7 +289,10 @@ int main(int argc, char *argv[])
 	//把客户连接过来的套接字和地址结构体对应起来
 	unordered_map<int, client_data*> map_fd_addr;
 	
+
+	//*********
 	//epoll初始化
+	//*********
 	epoll_event* events = new epoll_event[MAX_EVENT_SIZE];
 	int epollfd = epoll_create(MAX_USERS);
 	assert(epollfd != -1);
@@ -311,13 +326,12 @@ int main(int argc, char *argv[])
 					continue;
 				}
 				fd_map[client->cmd_fd] = client;
-				client->write = client->buf;
 				//根据接收到的命令处理
-				int ret = recv(sockfd, client->write, sizeof(client->buf), 0);
+				int ret = recv(sockfd, (void*)&client->client_package, sizeof(client->client_package), 0);
 				if (ret < 0)
 				{
 					cout << strerror(errno) << endl;
-					exit(1);
+					return 1;
 				}
 				
 				//把传数据的套接字传过去方便传输
@@ -333,8 +347,8 @@ int main(int argc, char *argv[])
 			//之前的套接字，有新的数据
 			else if (events[i].events & EPOLLIN)
 			{
-
-				int ret = recv(sockfd, fd_map[sockfd]->write, sizeof((fd_map[sockfd])->buf), 0);
+				(fd_map[sockfd]->client_package).clear();
+				int ret = recv(sockfd, &(fd_map[sockfd]->client_package), sizeof((fd_map[sockfd])->client_package), 0);
 				if (ret < 0)
 				{
 					cout << strerror(errno) << endl;

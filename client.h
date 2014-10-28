@@ -15,10 +15,45 @@
  *
  * =====================================================================================
  */
+#pragma once
 
-#include <unistd.h>
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <ifaddrs.h>
 #include <string.h>
+#include "package.h"
 
+const char* server_ip = "123.123.123.123";
+
+class client_init
+{
+	public 
+		:
+		int cmd_fd;
+		int data_fd;
+
+		sockaddr_in cmd_address; 	//服务器地址结构(传命令)
+		sockaddr_in data_address; 	//服务器地址结构(传数据)
+	
+		int port_cmd;
+		int port_data;
+
+		char target_ip[INET_ADDRSTRLEN];//目标服务器ip
+		
+		client_init()
+		{
+			strncpy(target_ip, server_ip, strlen(server_ip));
+			port_cmd = 12344;
+			port_data = 12345;
+		}
+
+		//返回值初始化后文件描述符
+	 	void init_addr();
+
+	private
+		:
+
+
+};
