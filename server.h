@@ -39,7 +39,8 @@ class client_data
 		socklen_t addr_length;
 		int data_fd;
 		int cmd_fd;
-		buf_data client_package; 	//自定义数据结构
+		
+		buf_data package;
 		/*
 		 * get
 		 * put

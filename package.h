@@ -7,11 +7,13 @@ const int MAX_USERS = 1024;
 const int LISTEN_QUEUE_LEN = 5;
 
 //maybe no_use
-const int GET_NUMBER = 1;
-const int PUT_NUMBER = 2;
-const int DIR_NUMBER = 3;
+const int IP_NUMBER = 1;
 
-const int MAX_NUMBER = 3;
+const int GET_NUMBER = 2;
+const int PUT_NUMBER = 3;
+const int DIR_NUMBER = 4;
+
+const int MAX_NUMBER = 4;
 
 //包中数据大小 
 const int MAX_BUFFER = 1014;
