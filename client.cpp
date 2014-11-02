@@ -28,9 +28,10 @@
 
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 #include "client.h"
-
+#include "tool.h"
 extern int errno;
 
 #include <iostream>
@@ -109,25 +110,45 @@ bool client_init::judge_cmd()
 	temp_package.end_flag = true;
 	memcpy(buf_str, &temp_package, sizeof(temp_package));
 	
+	cout << "temp_package.buf contains..." << endl;
+	cout << temp_package.buf << endl;
 	int ret = send(cmd_fd, buf_str, sizeof(temp_package), 0);
 	if (ret < 0)
 	{
 		cout << "send error" << strerror(errno) << endl;
 		return false;
 	}
+	cout << "first package send"<< endl;
+//	ret = recv(cmd_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
+//测试代码
+	ret = recv(cmd_fd, buf_str, sizeof(buf_str), 0);
+//测试代码
+	if (ret < 0)
+	{
+		cout << strerror(errno) << endl;
+		return false;
+	}
 	
-	ret = recv(cmd_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
 	if (ret != 1024)
 	{
 		cout << "recv error not 1024" << endl;
 		return false;
 	}
-	memcpy(&temp_package, buf_str, sizeof(buf_str));
-		
-	if(fun_list[temp_package.type] == NULL)
+
+	buf_data package_recv;
+	memcpy(&package_recv, buf_str, sizeof(buf_str));
+	if (!package_recv.ack_flag)
 	{
+		cout << "recv not the ack package, someone set the wrong package" << endl;
+	}
+
+	if(fun_list[package_recv.type] == NULL)
+	{
+		cout << "no function to deal with it,something wrong" << endl;
 		return false;
 	}
+	fun_list[package_recv.type]();
+	
 	return true;
 }
 
@@ -139,33 +160,65 @@ bool client_init::get()
 		close(data_fd);
 		return false;
 	}
-
-	buf_data package;
-	package.type = GET_NUMBER;
-	package.end_flag = true;
-
+/*
+ * 预留一个类给文件文件管理
+ *
+ * */
+	mkdir("../ftp_download", 0777);
+	
+	buf_data package_file;
 	char buf_str[1024];
-	memcpy(buf_str, &package, sizeof(buf_str));
-	int ret = send(cmd_fd, buf_str, sizeof(buf_str), 0);
-//测试代码
-	cout << "send: " << ret << endl;
-//测试代码
+
+	char now_path[100];
+	getcwd(now_path, 100);
+	int ret = chdir("../ftp_download");
 	if (ret < 0)
 	{
-		cout << strerror(errno) << endl;
-		return false;
-	}
-	memset(buf_str, '\0', sizeof(buf_str));
-	ret = recv(cmd_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
-	memcpy(&package, buf_str, sizeof(buf_str));
-	if (!package.ack_flag)
-	{
-		cout << "包中不含确认数据，不是结束标志" << endl;
+		cout << "chdir error " << strerror(errno) << endl;
 	}
 
-//测试代码
-	cout << "recv: " << ret << endl;
-//测试代码
+	cout << temp_package.buf<< endl;
+	cout << basename(temp_package.buf)<< endl;
+	int file_fd = creat(basename(temp_package.buf), 0666);
+	if (file_fd == -1)
+	{
+		cout << "open error" << strerror(errno) << endl;
+		return false;
+	}
+
+	do
+	{
+		int ret = recv(cmd_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
+		if (ret < 0)
+		{
+			cout << strerror(errno) << endl;
+			return false;
+		}
+		if (ret != 1024)
+		{
+			cout << "recv data not full 1024 error"<< endl;
+			return false;
+		}
+
+		memcpy(&package_file, buf_str, sizeof(buf_str));
+		ret = write(file_fd, package_file.buf, package_file.length);
+		if (ret < 0)
+		{
+			cout << strerror(errno) << endl;
+			return false;
+		}
+
+		if (package_file.end_flag)
+		{
+			cout << "file has download completely..." << endl;
+			break;
+		}
+	//测试代码
+		cout << "recv data: " << ret << endl;
+	//测试代码	
+	}while(1);
+
+	chdir(now_path);
 	return true;
 }
 
@@ -178,6 +231,8 @@ bool client_init::dir()
 {
 	return false;
 }
+
+
 
 int main(int argc, char* argv[])
 {
@@ -203,15 +258,16 @@ int main(int argc, char* argv[])
 	client.data_fd = client.init_addr(false);
 	
 //测试代码
-	memcpy(client.temp_package.buf, argv[2], strlen(argv[2]));
+	strncpy(client.temp_package.buf, argv[2], strlen(argv[2]));
 	client.temp_package.buf[strlen(argv[2])] = '\0';
+	client.temp_package.length = strlen(argv[2]);
 //测试代码
 	
 	//连接命令端口
 	//允许不断输入命令并解析
 //	while(1)
 //	{
-		//连接成功后开始进入功能函数
+		//解析成功后开始进入功能函数
 		client.judge_cmd();
 //	}
 

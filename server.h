@@ -26,6 +26,7 @@
 
 #include <unordered_map>
 #include <string>
+#include <functional>
 
 #include "package.h"
 
@@ -35,10 +36,17 @@ class client_data
 {
 	public 
 		:
-		sockaddr_in address;
-		socklen_t addr_length;
 		int data_fd;
 		int cmd_fd;
+		//cmd
+		sockaddr_in address_cmd;
+		socklen_t addr_length_cmd;
+		//data
+		sockaddr_in address_data;
+		socklen_t addr_length_data;
+// 		old way to find the function 
+// 		unordered_map<int, bool (client_data::*)(void)> fun_list;
+		unordered_map<int, function<bool(void)>> fun_list;
 		
 		buf_data package;
 		/*
@@ -50,19 +58,33 @@ class client_data
 		 * */
 		client_data()
 		{
-			addr_length = sizeof(address);
+			addr_length_cmd = sizeof(address_cmd);
+			addr_length_data = sizeof(address_data);
 			
-			fun_list[GET_NUMBER] = &client_data::get;	
-			fun_list[PUT_NUMBER] = &client_data::put;
-			fun_list[DIR_NUMBER] = &client_data::dir;
+			flag_first_acp = false;
+// old way to find the function	
+//			fun_list[GET_NUMBER] = &client_data::get;
+//			fun_list[PUT_NUMBER] = &client_data::put;
+//			fun_list[DIR_NUMBER] = &client_data::dir;
+	
+			fun_list[GET_NUMBER] = [&]() {  
+				return this->get();
+			};
+			fun_list[PUT_NUMBER] = [&]() {
+				return this->put();
+			};
+			fun_list[DIR_NUMBER] = [&]() {
+				return this->dir();
+			};
+
 		}
 		bool judge_buf();
 
 	private
 		:
 		//由字符串直接映射函数体
-		unordered_map<int, bool (client_data::*)(void)> fun_list;
-
+		bool flag_first_acp;
+		
 		bool get();
 		bool put();
 		bool dir();
@@ -85,8 +107,6 @@ class server_init
 		:
 		struct ifaddrs* ifAddrStruct; 	//获取ip结构体
 		void * tmpAddrPtr; 		//临时指针
-		sockaddr_in cmd_address; 	//服务器地址结构体(传命令)
-		sockaddr_in data_address; 	//服务器地址结构体(传数据)
 		int port_cmd; 			//命令端口
 		int port_data; 			//数据端口
 
@@ -98,6 +118,8 @@ class server_init
 			
 	public 
 		:
+		sockaddr_in cmd_address; 	//服务器地址结构体(传命令)
+		sockaddr_in data_address; 	//服务器地址结构体(传数据)
 		server_init();
 		int  init_fd_addr(bool is_wifi, bool is_cmd); //设置服务器套接字并绑定监听 产生一切都就绪的文件描述符
 		void addfd(int epollfd, int fd);//在epoll中添加描述符

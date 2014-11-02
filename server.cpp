@@ -27,11 +27,12 @@
 #include "server.h"
 
 #include <arpa/inet.h>
-#include <vector>
 #include <pthread.h>
 #include <errno.h>
+#include <signal.h>
 
 #include <iostream>
+#include <vector>
 
 extern int errno;
 
@@ -40,15 +41,15 @@ using namespace::std;
 int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
 {
 	sockaddr_in* address;
-	int port;
+	int* port;
 	if (is_cmd)
 	{
-		port = port_cmd;
+		port = &port_cmd;
 		address = &cmd_address;
 	}
 	else 
 	{   
-		port = port_data;
+		port = &port_data;
 		address = &data_address;
 	}
 	assert(ip != NULL);
@@ -62,7 +63,7 @@ int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
 //测试代码
 
 	inet_pton(AF_INET, target_ip, &address->sin_addr);
-	address->sin_port = htons(port);
+	address->sin_port = htons(*port);
 
 	int listenfd = socket(PF_INET, SOCK_STREAM, 0);
 	assert(listenfd >= 0);
@@ -86,11 +87,11 @@ int server_init::setnonblocking(int fd)
 
 void server_init::addfd(int epollfd, int fd)
 {
+	setnonblocking(fd);
 	epoll_event event;
 	event.data.fd = fd;
 	event.events = EPOLLET | EPOLLIN;
 	epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
-	setnonblocking(fd);
 }
 
 server_init::server_init()
@@ -121,6 +122,7 @@ char* server_init::get_ip(bool is_wifi)
 		}
 		ifAddrStruct = ifAddrStruct->ifa_next;
 	}
+	//the code below shows 'is_wifi' is just a suggestion not a commamd
 	if (is_wifi)
 	{
 		if (ip_w[0] != '\0')
@@ -167,35 +169,51 @@ char* buf_tool::skip(char* start)
 bool client_data::judge_buf()
 {
 	char buf_str[1024];
-	int ret = recv(cmd_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
+//测试代码
+	int ret = recv(cmd_fd, buf_str, sizeof(buf_str), 0);
+//测试代码
 	memcpy(&package, buf_str, sizeof(package));
 	if (ret < 0)
 	{
-		cout << strerror(errno) << endl;
+		cout << "judge_buf" << strerror(errno) << endl;
 		return false;
 	}
-
+	cout << "first package.buf...  " << package.buf << endl;
 	//类型不在范围内，为恶意包丢弃
 	if (package.type > MAX_NUMBER)
 	      return false;
 	//回复一个收到确认包
-	package.clear();
-	package.type = GET_NUMBER;
-	package.length = 0;
-	package.ack_flag = true;
-	memcpy(buf_str, &package, sizeof(package));
-	ret = send(cmd_fd, buf_str, sizeof(package), 0);
+	//回复不要用类中的，get会用
+	buf_data package_ack;
+	
+	package_ack.clear();
+	package_ack.type = GET_NUMBER;
+	package_ack.length = 0;
+	package_ack.ack_flag = true;
+	memcpy(buf_str, &package_ack, sizeof(package_ack));
+	ret = send(cmd_fd, buf_str, sizeof(buf_str), 0);
 
-	//进入功能函数
-	bool err_flag = fun_list[package.type];
-	return err_flag;
+	if (!flag_first_acp)
+	{
+		this->data_fd = accept(this->data_fd, (struct sockaddr*)&(this->address_data), &(this->addr_length_data));
+		if (ret < 0)
+		{
+			cout << strerror(errno) << endl;
+			exit(1);
+		}
+		else 
+		{
+			cout << "accept return " << this->data_fd << endl;
+		}
+		flag_first_acp = true;
+	}
+
+	return true;
 }
 
 bool client_data::get()
 {
 	int ret;
-	ret = accept(this->data_fd, (struct sockaddr*)&(this->address), &(this->addr_length));
-	assert(ret < 0);
 
 	//保留当前路径，用于传输完，恢复
 	char now_path[MAX_BUFFER];
@@ -203,6 +221,8 @@ bool client_data::get()
 //
 //预留一个类给处理路径， 确保文件都在一个指定文件夹不会越权
 //
+	cout << "package length" << endl;
+	cout << dirname(package.buf) << endl;
 	chdir(dirname(package.buf));
 	cout << "now at " << dirname(package.buf) << endl;
 	//打开文件，准备读取
@@ -220,21 +240,38 @@ bool client_data::get()
 		ret = read(file_fd, package_send.buf, sizeof(package_send.buf));
 		if (ret < 0)
 		{
+			package.clear();
+			package.type = GET_NUMBER;
+			package.length = 0;
+		      	package_send.end_flag = true;
+			if (send(data_fd, (void*)&package_send, sizeof(package_send), 0) < 0)
+			      cout << strerror(errno) << endl;
 			break;
 		}
-		if (ret == 0)
-		      package_send.end_flag = true;
 		package_send.length = ret;
+//测试代码
+		cout << "read " << ret << endl;
+//测试代码
+		//read length
+		if (ret == 0 && ret == 1024)
+		      package_send.end_flag = true;
 	
 		ret = send(data_fd, (void*)&package_send, sizeof(package_send), 0);
+//测试代码
+		cout << "send " << ret << endl;
+//测试代码
 		if (ret < 0)
 		{
-			break;
+			cout << strerror(errno) << endl;
+			return false;
 		}
-		if(package_send.end_flag)
-		      return true;
 	}
 
+	//恢复路径
+	chdir(now_path);
+
+	if(package_send.end_flag)
+	      return true;
 
 	return false;
 }
@@ -257,15 +294,24 @@ bool client_data::dir()
 	return false;
 }
 
+
+//pthread function
 void* work_function(void* arg)
 {
 	//判断字符串，哈希找到函数并执行
+	pthread_detach(pthread_self());
 	client_data* client = (client_data*)arg;
-	client->judge_buf();
+	client->fun_list[client->package.type]();
+//	client->((*client->fun_list.find(client->package.type))();
 
 	return NULL;
 }
 
+//signal function
+void handler_sigint(int signo)
+{
+	cout << "server is stopped by some reasons......" << endl;
+}
 
 int main(int argc, char *argv[])
 {
@@ -291,7 +337,6 @@ int main(int argc, char *argv[])
 	//把客户连接过来的套接字和地址结构体对应起来
 	unordered_map<int, client_data*> map_fd_addr;
 
-
 	//*********
 	//epoll初始化
 	//*********
@@ -302,6 +347,8 @@ int main(int argc, char *argv[])
 	server->addfd(epollfd, listenfd_cmd);
 //	server->addfd(epollfd, listenfd_data);
 
+	signal(SIGINT, handler_sigint);
+
 	//用来通过文件描述符找客户端结构体
 	unordered_map<int, client_data*> fd_map;
 	while (1)
@@ -310,9 +357,16 @@ int main(int argc, char *argv[])
 		if (number < 0)
 		{
 			cout << "epoll failure" << endl;
-			break;
+			//map 的释放
+			/*unordered_map<int, client_data*>::iterator iter;
+			for ( iter = fd_map.begin(); iter != fd_map.end(); ++iter)
+				{
+					delete *iter;
+				}
+				break;
+			*/
 		}
-
+		
 		for ( int i = 0; i < number; i++)
 		{
 			int sockfd = events[i].data.fd;
@@ -321,44 +375,35 @@ int main(int argc, char *argv[])
 			{
 
 				client_data* client = new client_data();
-				client->cmd_fd = accept(listenfd_cmd, (struct sockaddr*)&client->address, &client->addr_length);
+				client->data_fd = listenfd_data;
+				//client->cmd_fd已经由listen后的变为accept后的了
+				client->cmd_fd = accept(listenfd_cmd, (struct sockaddr*)&client->address_cmd, &client->addr_length_cmd);
+//测试代码
+				cout << "client->cmd_fd" << client->cmd_fd << endl;
+//测试代码
+				server->addfd(epollfd, client->cmd_fd);
 				if (client->cmd_fd < 0)
 				{
 					printf("errno is: %s\n", strerror(errno));
 					continue;
 				}
 				fd_map[client->cmd_fd] = client;
-				//根据接收到的命令处理
-				
-				//把传数据的套接字传过去方便传输
-				//switch ()
-				//get
-				//put
-				//dir
-				//命令传输较少，我们采用IO复用处理，文件传输较长，分出线程处理
-				pthread_t work_pthread;
-				int ret = pthread_create(&work_pthread, NULL, work_function, (void*)&client);
-				assert(ret < 0);
-			}
+			//命令传输较少，我们采用IO复用处理，文件传输较长，分出线程处理
 			//之前的套接字，有新的数据
 			else if (events[i].events & EPOLLIN)
 			{
 				(fd_map[sockfd]->package).clear();
-				char recv_buf[1024];
-				int ret = recv(sockfd, recv_buf, sizeof((fd_map[sockfd])->package), MSG_WAITALL);
-				memcpy(&(fd_map[sockfd])->package, recv_buf, sizeof(recv_buf));
-				if (ret < 0)
-				{
-					cout << strerror(errno) << endl;
-					exit(1);
-				}
+				fd_map[sockfd]->judge_buf();
 				pthread_t work_pthread;
-				ret = pthread_create(&work_pthread, NULL, work_function, (void*)fd_map[sockfd]);
-				assert(ret < 0);
+				int ret = pthread_create(&work_pthread, NULL, work_function, (void*)fd_map[sockfd]);
+				if (ret != 0)
+				{
+					cout << "create pthread error" << endl;
+				}
 			}
 			else 
 			{
-				cout << "进入非创建无数据，可能断开状态" << endl;
+				cout << "something else happened" << endl;
 			}
 		}
 	}

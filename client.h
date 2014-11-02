@@ -26,8 +26,9 @@
 #include "package.h"
 
 #include <unordered_map>
-
-using namespace::std;
+#include <functional>
+#include <map>
+using namespace std;
 
 class find_server
 {
@@ -53,17 +54,29 @@ class client_init
 
 		char target_ip[INET_ADDRSTRLEN];//目标服务器ip
 	
-		unordered_map<int, bool (client_init::*)(void)> fun_list;
+// 		old way to find the function
+//  		unordered_map<int, bool (client_init::*)(void)> fun_list;
+		unordered_map<int, function<bool(void)>> fun_list;
 
 		buf_data temp_package;
 		client_init()
 		{
 			port_cmd = 12344;
 			port_data = 12345;
+// old way to find the function
+//			fun_list[GET_NUMBER] = &client_init::get;
+//			fun_list[PUT_NUMBER] = &client_init::put;
+//			fun_list[DIR_NUMBER] = &client_init::dir;
 
-			fun_list[GET_NUMBER] = &client_init::get;
-			fun_list[PUT_NUMBER] = &client_init::put;
-			fun_list[DIR_NUMBER] = &client_init::dir;
+			fun_list[GET_NUMBER] = [&]() {  
+				return this->get();
+			};
+			fun_list[PUT_NUMBER] = [&]() {
+				return this->put();
+			};
+			fun_list[DIR_NUMBER] = [&]() {
+				return this->dir();
+			};
 		}
 
 		//返回值初始化后文件描述符
@@ -76,7 +89,7 @@ class client_init
 		sockaddr_in cmd_address; 	//服务器地址结构(传命令)
 		sockaddr_in data_address; 	//服务器地址结构(传数据)
 
-		bool get(); 			//下载
-		bool put(); 			//上传
-		bool dir(); 			//显示目录
+		bool get(void);			//下载
+		bool put(void);			//上传
+		bool dir(void);			//显示目录
 };
