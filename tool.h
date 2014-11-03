@@ -17,6 +17,9 @@
 
 #include <unistd.h>
 #include <string.h>
+#include <string>
+
+using namespace::std;
 
 class tool_sockfd
 {
@@ -36,7 +39,10 @@ class tool_str
 {
 	public 
 		:
+	//绝对路径转化相对路径
+	static char* path_change(char* old_path);
+	//path_change函数用到的全局替换
+	static void replace_all(string& targetstring, string const & substring1, string const & replacestring);
+	//dirname 因为系统调用有某些问题
+	static char* get_str_path(char* str);
 };
- 
-
-

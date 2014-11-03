@@ -1,0 +1,8 @@
+client:client.o tool.o
+	g++ client.o tool.o -Wall -std=c++11 -pthread -o client
+client.o:client.cpp client.h tool.h
+	g++ -c -Wall -std=c++11 -pthread -g client.cpp 
+tool.o:tool.cpp tool.h
+	g++ -c tool.cpp -g
+clean:
+	-rm -f *.o

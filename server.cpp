@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <sys/epoll.h>
 #include "server.h"
+#include "tool.h"
 
 #include <arpa/inet.h>
 #include <pthread.h>
@@ -57,10 +58,11 @@ int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
 	int ret = 0;
 	bzero(address, sizeof(cmd_address));
 	address->sin_family = AF_INET;
-	//const char* target_ip = get_ip(is_wifi);
+	const char* target_ip = get_ip(is_wifi);
 //测试代码
-	const char* target_ip = "127.0.0.1";
+//	const char* target_ip = "127.0.0.1";
 //测试代码
+	cout << target_ip << endl;
 
 	inet_pton(AF_INET, target_ip, &address->sin_addr);
 	address->sin_port = htons(*port);
@@ -141,31 +143,7 @@ char* server_init::get_ip(bool is_wifi)
 	}
 
 }
-/*
-bool buf_tool::extract_cmd(char* start, int* length)
-{
-	char* end_p = strchr(start, '\0');
-	char* word_p = strchr(start, ' ');
-	if (end_p-start <= word_p-start)
-		return false;
-	
-	//命令长度
-	int str_len = word_p - start;
-	if (str_len <= 0)
-	      return false;
-	else *length = str_len;
 
-	return true;
-}
-
-char* buf_tool::skip(char* start)
-{
-	while ((start == ' ' || start == '\t' || start || == '\n') && (start != NULL))
-	      start++;
-
-	return start;
-}
-*/
 bool client_data::judge_buf()
 {
 	char buf_str[1024];
@@ -221,12 +199,49 @@ bool client_data::get()
 //
 //预留一个类给处理路径， 确保文件都在一个指定文件夹不会越权
 //
-	cout << "package length" << endl;
-	cout << dirname(package.buf) << endl;
-	chdir(dirname(package.buf));
-	cout << "now at " << dirname(package.buf) << endl;
+	cout << "before change:  " << package.buf << endl;
+	char* change;
+	if ((change = tool_str::path_change(package.buf)) == NULL)
+	{
+		cout << "path change failed..." << endl;
+		return false;
+	}
+
+	cout << change << endl;
+	cout << "package length: " << package.length << endl;
+	cout << change << endl;
+
+
+	mkdir("../ftp_source", 0777);
+	ret = chdir("../ftp_source");
+	if (ret < 0)
+	{
+		cout << "into the ftp_source failed" << endl;
+		return false;
+	}
+	else 
+		cout << "now at ftp_source.." << endl;
+
+	//cout << "now at " << dirname(package.buf) << endl;
 	//打开文件，准备读取
-	int file_fd = open(basename(package.buf), O_RDWR, 0644);
+	
+	
+	char save_path[500];
+	if (strlen(package.buf) > 500)
+	{
+		cout << "path too long..." << endl;
+		return false;
+	}
+	strncpy(save_path, package.buf, strlen(package.buf));
+
+/*	if ( (ret = chdir( tool_str::get_str_path(save_path) ) ) < 0)
+	{
+		cout << "into dir failed..."<< endl;
+	}
+*/	
+
+	int file_fd = open(package.buf, O_RDWR, 0644);
+	cout << "package.buf:   " << package.buf << endl;
 	if (file_fd < 0)
 	{
 		cout << strerror(errno) << endl;
@@ -238,7 +253,7 @@ bool client_data::get()
 	{
 		package_send.clear();
 		ret = read(file_fd, package_send.buf, sizeof(package_send.buf));
-		if (ret < 0)
+		if (ret <= 0)
 		{
 			package.clear();
 			package.type = GET_NUMBER;
@@ -388,6 +403,7 @@ int main(int argc, char *argv[])
 					continue;
 				}
 				fd_map[client->cmd_fd] = client;
+			}
 			//命令传输较少，我们采用IO复用处理，文件传输较长，分出线程处理
 			//之前的套接字，有新的数据
 			else if (events[i].events & EPOLLIN)

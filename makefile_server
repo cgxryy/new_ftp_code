@@ -1,0 +1,8 @@
+server:server.o tool.o
+	g++ server.o tool.o -Wall -std=c++11 -pthread -o server
+server.o:server.cpp server.h tool.h
+	g++ -c -Wall -std=c++11 -pthread -g server.cpp 
+tool.o:tool.cpp tool.h
+	g++ -c tool.cpp -g
+clean:
+	-rm -f *.o

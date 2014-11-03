@@ -188,7 +188,7 @@ bool client_init::get()
 
 	do
 	{
-		int ret = recv(cmd_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
+		int ret = recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
 		if (ret < 0)
 		{
 			cout << strerror(errno) << endl;
@@ -199,6 +199,8 @@ bool client_init::get()
 			cout << "recv data not full 1024 error"<< endl;
 			return false;
 		}
+		cout << "recv: " << ret << endl;
+
 
 		memcpy(&package_file, buf_str, sizeof(buf_str));
 		ret = write(file_fd, package_file.buf, package_file.length);
@@ -207,6 +209,7 @@ bool client_init::get()
 			cout << strerror(errno) << endl;
 			return false;
 		}
+		cout << "write: " << ret << endl;
 
 		if (package_file.end_flag)
 		{
