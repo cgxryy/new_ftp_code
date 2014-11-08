@@ -61,9 +61,9 @@ int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
 	int ret = 0;
 	bzero(address, sizeof(cmd_address));
 	address->sin_family = AF_INET;
-//	const char* target_ip = get_ip(is_wifi);
+	const char* target_ip = get_ip(is_wifi);
 //测试代码
-	const char* target_ip = "127.0.0.1";
+//	const char* target_ip = "127.0.0.1";
 //测试代码
 	cout << target_ip << endl;
 
@@ -80,23 +80,6 @@ int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
 	assert(ret != -1);
 
 	return listenfd;
-}
-
-int server_init::setnonblocking(int fd)
-{
-	int old_option = fcntl(fd, F_GETFL);
-	int new_option = old_option | O_NONBLOCK;
-	fcntl(fd, F_SETFL, new_option);
-	return old_option;
-}
-
-void server_init::addfd(int epollfd, int fd)
-{
-	setnonblocking(fd);
-	epoll_event event;
-	event.data.fd = fd;
-	event.events = EPOLLET | EPOLLIN;
-	epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
 }
 
 server_init::server_init()
@@ -149,7 +132,7 @@ char* server_init::get_ip(bool is_wifi)
 
 bool client_data::judge_buf()
 {
-	char buf_str[1024];
+	char buf_str[MAX_BUF_SIZE];
 //测试代码
 	int ret = recv(cmd_fd, buf_str, sizeof(buf_str), 0);
 //测试代码
@@ -235,7 +218,7 @@ bool client_data::get()
 	}
 
 	buf_data package_send;
-	char send_buf[1024];
+	char send_buf[MAX_BUF_SIZE];
 	while (1)
 	{
 		package_send.clear();
@@ -301,38 +284,40 @@ bool client_data::put()
 	}
 
 	buf_data package_file;
-	char buf_str[1024];
+	char buf_str[MAX_BUF_SIZE];
+	char* ptr = buf_str;
+	char* end = &buf_str[MAX_BUF_SIZE-1];
 	do
 	{
-		int ret = recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
-		if (ret < 0)
+//		int ret = recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
+		//instead of recv(MSG_WAITALL)
+		int ret = read(data_fd, ptr, end-ptr+1);
+		if (ret < 0 && errno != EAGAIN)
 		{
-			cout << "ret < 0 307" << endl;
-			cout << strerror(errno) << endl;
+			cout << "ret < 0 " << __LINE__ << endl;
+			cout << strerror(errno)  << __LINE__ << endl;
 			return false;
 		}
-		if (ret != 1024)
+		ptr = ptr + ret;
+		if (ptr - end >= 0)
 		{
-			cout << "ret != 1024 313" << endl;
-			cout << "recv data not full 1024 error" << endl;
-			return false;
-		}
-		cout << "recv: " << ret << endl;
-
-		memcpy(&package_file, buf_str, sizeof(buf_str));
-		ret = write(file_fd, package_file.buf, package_file.length);
-		if (ret < 0)
-		{
-			cout << "ret < 0 323" << endl;
-			cout << strerror(errno) << endl;
-			return false;
-		}
-		cout << "write" << ret << endl;
-		
-		if (package_file.end_flag)
-		{
-			cout << "file has be put completely..." << endl;
-			break;
+			ptr = buf_str;
+			cout << "MAX_BUF_SIZE" << endl;
+			memcpy(&package_file, buf_str, sizeof(buf_str));
+			ret = write(file_fd, package_file.buf, package_file.length);
+			if (ret < 0)
+			{
+				cout << "ret < 0 " << __LINE__ << endl;
+				cout << strerror(errno)  << __LINE__ << endl;
+				return false;
+			}
+			cout << "write" << ret << endl;
+			
+			if (package_file.end_flag)
+			{
+				cout << "file has be put completely..." << endl;
+				break;
+			}
 		}
 	}while (1);
 
@@ -349,8 +334,8 @@ bool client_data::dir()
 	DIR *dir;
 	struct dirent* ptr;
 	
-	char now_path[1024];
-	getcwd(now_path, 1024);
+	char now_path[MAX_BUF_SIZE];
+	getcwd(now_path, MAX_BUF_SIZE);
 	
 	//before enter the dir ,it need to do some check
 	bool dir_flag = false;
@@ -376,7 +361,7 @@ bool client_data::dir()
 
 	buf_data send_package;//发送包
 	int length = 0;//有效字长
-	char send_buf[1024];//发送缓冲区
+	char send_buf[MAX_BUF_SIZE];//发送缓冲区
 	string send_string;//发送的文件名
 	string file_string;//完整文件名
 	struct stat file_stat;//文件状态
@@ -465,7 +450,7 @@ int main(int argc, char *argv[])
 	}
 
 	//*********
-	//初始化部分
+	//addr init
 	//*********
 	bool is_wifi;
 	if (atoi(argv[1]) == 'y')
@@ -477,19 +462,18 @@ int main(int argc, char *argv[])
 	int listenfd_cmd = server->init_fd_addr(is_wifi, true);
 	int listenfd_data = server->init_fd_addr(is_wifi, false);
 
-	//把客户连接过来的套接字和地址结构体对应起来
+	//connect the fd and the client_data
 	unordered_map<int, client_data*> map_fd_addr;
 
 	//*********
-	//epoll初始化
+	//epoll init
 	//*********
 	epoll_event* events = new epoll_event[MAX_EVENT_SIZE];
 	int epollfd = epoll_create(MAX_USERS);
 	assert(epollfd != -1);
 
 	//epoll only contains cmd_fd ,it doesn's contain data_fd
-	server->addfd(epollfd, listenfd_cmd);
-//	server->addfd(epollfd, listenfd_data);
+	tool_sockfd::addfd(epollfd, listenfd_cmd, true);
 
 	signal(SIGINT, handler_sigint);
 
@@ -501,14 +485,6 @@ int main(int argc, char *argv[])
 		if (number < 0)
 		{
 			cout << "epoll failure" << endl;
-			//map 的释放
-			/*unordered_map<int, client_data*>::iterator iter;
-			for ( iter = fd_map.begin(); iter != fd_map.end(); ++iter)
-				{
-					delete *iter;
-				}
-				break;
-			*/
 			continue;
 		}
 		
@@ -524,9 +500,10 @@ int main(int argc, char *argv[])
 				//client->cmd_fd已经由listen后的变为accept后的了
 				client->cmd_fd = accept(listenfd_cmd, (struct sockaddr*)&client->address_cmd, &client->addr_length_cmd);
 //测试代码
+				tool_sockfd::reset_oneshot(epollfd, listenfd_cmd);
 				cout << "client->cmd_fd" << client->cmd_fd << endl;
 //测试代码
-				server->addfd(epollfd, client->cmd_fd);
+				tool_sockfd::addfd(epollfd, client->cmd_fd, true);
 				if (client->cmd_fd < 0)
 				{
 					printf("errno is: %s\n", strerror(errno));
@@ -546,6 +523,7 @@ int main(int argc, char *argv[])
 				{
 					cout << "create pthread error" << endl;
 				}
+			//	tool_sockfd::reset_oneshot(epollfd, sockfd);
 			}
 			else 
 			{

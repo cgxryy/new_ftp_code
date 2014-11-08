@@ -27,15 +27,14 @@ class tool_sockfd
 	public
 		:
 		char recv_buf[1024];
-		//非阻塞的recv  MSG_WAITALL
-		static int recv_waitall(int sockfd, void* buf, size_t len, int flags);
+	
+	static void addfd(int epoll, int fd, bool oneshot);
+	static int setnonblocking(int fd);
+	static void reset_oneshot(int epollfd, int fd);
 };
 
 /**
  * 工具类
- * 路径转换
- * 下载时，不能看到指定路径外的文件,任何路径都会变成某文件夹下的文件
- * 上传时，可以选择所有路径,但是不能上传到越权文件夹下
  */
 class tool_str
 {

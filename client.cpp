@@ -107,7 +107,7 @@ bool client_init::judge_cmd()
 		}
 	}
 
-	char buf_str[1024];
+	char buf_str[MAX_BUF_SIZE];
 //测试代码
 //	temp_package.type = PUT_NUMBER;
 //测试代码
@@ -133,9 +133,9 @@ bool client_init::judge_cmd()
 		return false;
 	}
 	
-	if (ret != 1024)
+	if (ret != MAX_BUF_SIZE)
 	{
-		cout << "recv error not 1024" << endl;
+		cout << "recv error not MAX_BUF_SIZE" << endl;
 		return false;
 	}
 
@@ -194,7 +194,7 @@ bool client_init::get()
 	}
 
 	buf_data package_file;
-	char buf_str[1024];
+	char buf_str[MAX_BUF_SIZE];
 	do
 	{
 		int ret = recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
@@ -203,9 +203,9 @@ bool client_init::get()
 			cout << strerror(errno) << endl;
 			return false;
 		}
-		if (ret != 1024)
+		if (ret != MAX_BUF_SIZE)
 		{
-			cout << "recv data not full 1024 error"<< endl;
+			cout << "recv data not full MAX_BUF_SIZE error"<< endl;
 			return false;
 		}
 		cout << "recv: " << ret << endl;
@@ -256,7 +256,7 @@ bool client_init::put()
 	}
 
 	buf_data package_send;
-	char send_buf[1024];
+	char send_buf[MAX_BUF_SIZE];
 	while (1)
 	{
 		package_send.clear();
@@ -267,8 +267,8 @@ bool client_init::put()
 			package_send.type = PUT_NUMBER;
 			package_send.length = 0;
 		      	package_send.end_flag = true;
-			cout << "all send~~"<< endl;
 			memcpy(send_buf, &package_send, sizeof(send_buf));
+			cout << "all send~~"<< endl;
 			if (send(data_fd, (void*)&package_send, sizeof(package_send), 0) < 0)
 			      cout << strerror(errno) << endl;
 			break;
@@ -304,13 +304,13 @@ bool client_init::dir()
 	//读取文件名
 	//是目录加斜杠
 	//如果是结束发结束标志
-	char recv_buf[1024];
+	char recv_buf[MAX_BUF_SIZE];
 	buf_data recv_package;
 	vector<string> try_list;
 	while (1)
 	{
 		int ret = recv(data_fd, recv_buf, sizeof(recv_buf), MSG_WAITALL);
-		if (ret != 1024)
+		if (ret != MAX_BUF_SIZE)
 		{
 			cout << "something wrong..." << endl;
 			return false;
