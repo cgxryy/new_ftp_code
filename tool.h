@@ -18,7 +18,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <string>
-
+#include "package.h"
+#include <vector>
 using namespace::std;
 
 class tool_sockfd
@@ -31,6 +32,7 @@ class tool_sockfd
 };
 
 /**
+ * 工具类
  * 路径转换
  * 下载时，不能看到指定路径外的文件,任何路径都会变成某文件夹下的文件
  * 上传时，可以选择所有路径,但是不能上传到越权文件夹下
@@ -45,4 +47,6 @@ class tool_str
 	static void replace_all(string& targetstring, string const & substring1, string const & replacestring);
 	//dirname 因为系统调用有某些问题
 	static char* get_str_path(char* str);
+	static void get_file_name(vector<string> &file_container, buf_data &name_package);
+	static char* path_dir(char* old_path);
 };

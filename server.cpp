@@ -32,6 +32,9 @@
 #include <errno.h>
 #include <signal.h>
 
+#include <sys/types.h>
+#include <dirent.h>
+
 #include <iostream>
 #include <vector>
 
@@ -58,9 +61,9 @@ int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
 	int ret = 0;
 	bzero(address, sizeof(cmd_address));
 	address->sin_family = AF_INET;
-	const char* target_ip = get_ip(is_wifi);
+//	const char* target_ip = get_ip(is_wifi);
 //测试代码
-//	const char* target_ip = "127.0.0.1";
+	const char* target_ip = "127.0.0.1";
 //测试代码
 	cout << target_ip << endl;
 
@@ -165,7 +168,7 @@ bool client_data::judge_buf()
 	buf_data package_ack;
 	
 	package_ack.clear();
-	package_ack.type = GET_NUMBER;
+	package_ack.type = package.type;
 	package_ack.length = 0;
 	package_ack.ack_flag = true;
 	memcpy(buf_str, &package_ack, sizeof(package_ack));
@@ -177,7 +180,7 @@ bool client_data::judge_buf()
 		if (ret < 0)
 		{
 			cout << strerror(errno) << endl;
-			exit(1);
+			return false;
 		}
 		else 
 		{
@@ -196,9 +199,9 @@ bool client_data::get()
 	//保留当前路径，用于传输完，恢复
 	char now_path[MAX_BUFFER];
 	getcwd(now_path, sizeof(now_path));
-//
+
 //预留一个类给处理路径， 确保文件都在一个指定文件夹不会越权
-//
+// "/home"->"./home"  去掉..
 	cout << "before change:  " << package.buf << endl;
 	char* change;
 	if ((change = tool_str::path_change(package.buf)) == NULL)
@@ -222,24 +225,7 @@ bool client_data::get()
 	else 
 		cout << "now at ftp_source.." << endl;
 
-	//cout << "now at " << dirname(package.buf) << endl;
 	//打开文件，准备读取
-	
-	
-	char save_path[500];
-	if (strlen(package.buf) > 500)
-	{
-		cout << "path too long..." << endl;
-		return false;
-	}
-	strncpy(save_path, package.buf, strlen(package.buf));
-
-/*	if ( (ret = chdir( tool_str::get_str_path(save_path) ) ) < 0)
-	{
-		cout << "into dir failed..."<< endl;
-	}
-*/	
-
 	int file_fd = open(package.buf, O_RDWR, 0644);
 	cout << "package.buf:   " << package.buf << endl;
 	if (file_fd < 0)
@@ -249,17 +235,19 @@ bool client_data::get()
 	}
 
 	buf_data package_send;
+	char send_buf[1024];
 	while (1)
 	{
 		package_send.clear();
 		ret = read(file_fd, package_send.buf, sizeof(package_send.buf));
 		if (ret <= 0)
 		{
-			package.clear();
-			package.type = GET_NUMBER;
-			package.length = 0;
+			package_send.clear();
+			package_send.type = GET_NUMBER;
+			package_send.length = 0;
 		      	package_send.end_flag = true;
-			if (send(data_fd, (void*)&package_send, sizeof(package_send), 0) < 0)
+			memcpy(send_buf, &package_send, sizeof(send_buf));
+			if (send(data_fd, send_buf, sizeof(send_buf), 0) < 0)
 			      cout << strerror(errno) << endl;
 			break;
 		}
@@ -267,11 +255,8 @@ bool client_data::get()
 //测试代码
 		cout << "read " << ret << endl;
 //测试代码
-		//read length
-		if (ret == 0 && ret == 1024)
-		      package_send.end_flag = true;
-	
-		ret = send(data_fd, (void*)&package_send, sizeof(package_send), 0);
+		memcpy(send_buf, &package_send, sizeof(send_buf));
+		ret = send(data_fd, send_buf, sizeof(send_buf), 0);
 //测试代码
 		cout << "send " << ret << endl;
 //测试代码
@@ -280,6 +265,7 @@ bool client_data::get()
 			cout << strerror(errno) << endl;
 			return false;
 		}
+	
 	}
 
 	//恢复路径
@@ -295,20 +281,162 @@ bool client_data::put()
 {
 	//解析后面的文件路径系统
 	//只要文件名
+	mkdir("../ftp_source", 0777);
+	
 	//path_extract_name()
 	//打开新文件准备写入
+	char now_path[100];
+	getcwd(now_path, 100);
+	int ret = chdir("../ftp_source");
+	if (ret < 0)
+	{
+		cout << "chdir error" << strerror(errno) << endl;
+	}
+
+	int file_fd = creat(basename(package.buf), 0666);
+	if (file_fd == -1)
+	{
+		cout << "open error " << strerror(errno) << endl;
+		return false;
+	}
+
+	buf_data package_file;
+	char buf_str[1024];
+	do
+	{
+		int ret = recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
+		if (ret < 0)
+		{
+			cout << "ret < 0 307" << endl;
+			cout << strerror(errno) << endl;
+			return false;
+		}
+		if (ret != 1024)
+		{
+			cout << "ret != 1024 313" << endl;
+			cout << "recv data not full 1024 error" << endl;
+			return false;
+		}
+		cout << "recv: " << ret << endl;
+
+		memcpy(&package_file, buf_str, sizeof(buf_str));
+		ret = write(file_fd, package_file.buf, package_file.length);
+		if (ret < 0)
+		{
+			cout << "ret < 0 323" << endl;
+			cout << strerror(errno) << endl;
+			return false;
+		}
+		cout << "write" << ret << endl;
+		
+		if (package_file.end_flag)
+		{
+			cout << "file has be put completely..." << endl;
+			break;
+		}
+	}while (1);
+
+	chdir(now_path);
 
 	return false;
 }
 
 bool client_data::dir()
 {
-
 	//解析文件路径系统
 	//只要所有文件名
-	return false;
-}
+	
+	DIR *dir;
+	struct dirent* ptr;
+	
+	char now_path[1024];
+	getcwd(now_path, 1024);
+	
+	//before enter the dir ,it need to do some check
+	bool dir_flag = false;
+	if (strncmp(package.buf, "/", 2) == 0)
+	{
+		dir_flag = true;
+	}
+	string path_change = "../ftp_source";
+	path_change += package.buf;
 
+	if (chdir(path_change.c_str()) < 0)
+	{
+		cout << "chdir error...358" << endl;
+		return false;
+	}
+
+	if ((dir = opendir(path_change.c_str())) == NULL)
+	{
+		cout << strerror(errno) << endl;
+		return false;
+	}
+	
+
+	buf_data send_package;//发送包
+	int length = 0;//有效字长
+	char send_buf[1024];//发送缓冲区
+	string send_string;//发送的文件名
+	string file_string;//完整文件名
+	struct stat file_stat;//文件状态
+	while ((ptr = readdir(dir)) != NULL)
+	{
+		if (strlen(ptr->d_name) > sizeof(send_package.buf))
+		{
+			cout << "strlen(ptr->d_name)" << strlen(ptr->d_name) << endl;
+			cout << "sizeof(send_package.buf)" << sizeof(send_package.buf) << endl;
+			cout << "file name too long...error" << endl;
+			return false;
+		}
+
+		if (dir_flag)
+		{
+			string del_name = ptr->d_name;
+			if (del_name.compare(".") == 0 || del_name.compare("..") == 0)
+			{
+				continue;
+			}
+		}
+
+		if (length + strlen(ptr->d_name) > sizeof(send_package.buf))
+		{
+			memcpy(send_buf, &send_package, sizeof(send_buf));
+			send(data_fd, send_buf, sizeof(send_buf), 0);
+			send_package.clear();
+			length = 0;
+			continue;
+		}
+		
+		//judge file or dir
+		file_string.clear();
+		file_string += package.buf;
+		file_string += "/";
+		file_string += ptr->d_name;
+		lstat(file_string.c_str(), &file_stat);
+		if (S_ISDIR(file_stat.st_mode))
+		{
+			length += strlen(ptr->d_name) + 2;
+			send_string += ptr->d_name;
+			send_string += "/ ";
+		}
+		else 
+		{
+			length += strlen(ptr->d_name) + 1;
+			send_string += ptr->d_name;
+			send_string += " ";
+		}
+	}
+	memcpy(send_package.buf, send_string.c_str(), sizeof(send_package.buf));
+	send_package.end_flag = true;
+	
+	memcpy(send_buf, &send_package, sizeof(send_buf));
+	send(data_fd, send_buf, sizeof(send_buf), 0);
+
+	chdir(now_path);
+
+	return true;
+}
 
 //pthread function
 void* work_function(void* arg)
@@ -359,6 +487,7 @@ int main(int argc, char *argv[])
 	int epollfd = epoll_create(MAX_USERS);
 	assert(epollfd != -1);
 
+	//epoll only contains cmd_fd ,it doesn's contain data_fd
 	server->addfd(epollfd, listenfd_cmd);
 //	server->addfd(epollfd, listenfd_data);
 
@@ -380,6 +509,7 @@ int main(int argc, char *argv[])
 				}
 				break;
 			*/
+			continue;
 		}
 		
 		for ( int i = 0; i < number; i++)

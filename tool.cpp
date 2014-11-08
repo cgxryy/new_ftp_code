@@ -13,9 +13,12 @@
 //        Company:  Class 1203 of Network Engineering
 // 
 // =====================================================================================
-#include "tool.h"
 #include <string.h>
 #include <iostream>
+#include <sstream>
+
+#include "tool.h"
+
 using namespace::std;
 
 char* tool_str::path_change(char* old_path)
@@ -63,5 +66,16 @@ char* tool_str::get_str_path(char* str)
 	}
 	else 
 	      return NULL;
+}
+
+void tool_str::get_file_name(vector<string> &name_container, buf_data &name_package)
+{
+	stringstream ss(name_package.buf);
+
+	string sub_str;
+	while (getline(ss, sub_str, ' '))
+	{
+		name_container.push_back(sub_str);
+	}
 }
 

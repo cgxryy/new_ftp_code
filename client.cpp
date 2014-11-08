@@ -29,6 +29,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 #include "client.h"
 #include "tool.h"
@@ -96,16 +97,19 @@ bool client_init::connect_timelimit(int sockfd, struct sockaddr* address, int ti
 
 bool client_init::judge_cmd()
 {
-	if (connect(cmd_fd, (struct sockaddr*)&cmd_address, sizeof(cmd_address)) < 0)
+	if (!flag_first_con)
 	{
-		cout << "conection failed" << endl;
-		close(cmd_fd);
-		return false;
+		if (connect(cmd_fd, (struct sockaddr*)&cmd_address, sizeof(cmd_address)) < 0)
+		{
+			cout << "conection failed" << endl;
+			close(cmd_fd);
+			return false;
+		}
 	}
 
 	char buf_str[1024];
 //测试代码
-	temp_package.type = GET_NUMBER;
+//	temp_package.type = PUT_NUMBER;
 //测试代码
 	temp_package.end_flag = true;
 	memcpy(buf_str, &temp_package, sizeof(temp_package));
@@ -147,6 +151,18 @@ bool client_init::judge_cmd()
 		cout << "no function to deal with it,something wrong" << endl;
 		return false;
 	}
+	
+	if (!flag_first_con)
+	{
+		if (connect(data_fd, (struct sockaddr*)&data_address, sizeof(data_address)) < 0)
+		{
+			cout << "conection failed" << endl;
+			close(data_fd);
+			return false;
+		}
+		flag_first_con = true;
+	}
+	
 	fun_list[package_recv.type]();
 	
 	return true;
@@ -154,20 +170,11 @@ bool client_init::judge_cmd()
 
 bool client_init::get()
 {
-	if (connect(data_fd, (struct sockaddr*)&data_address, sizeof(data_address)) < 0)
-	{
-		cout << "conection failed" << endl;
-		close(data_fd);
-		return false;
-	}
 /*
  * 预留一个类给文件文件管理
  *
  * */
 	mkdir("../ftp_download", 0777);
-	
-	buf_data package_file;
-	char buf_str[1024];
 
 	char now_path[100];
 	getcwd(now_path, 100);
@@ -186,6 +193,8 @@ bool client_init::get()
 		return false;
 	}
 
+	buf_data package_file;
+	char buf_str[1024];
 	do
 	{
 		int ret = recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
@@ -227,12 +236,102 @@ bool client_init::get()
 
 bool client_init::put()
 {
+	int ret;
+
+	//保留当前路径，用于传输完，恢复
+	char now_path[MAX_BUFFER];
+	getcwd(now_path, sizeof(now_path));
+
+//预留一个类给处理路径， 确保文件都在一个指定文件夹不会越权
+// "/home"->"./home"  去掉..
+	cout << "before change:  " << temp_package.buf << endl;
+
+	//打开文件，准备读取
+	int file_fd = open(temp_package.buf, O_RDWR, 0644);
+	cout << "package.buf:   " << temp_package.buf << endl;
+	if (file_fd < 0)
+	{
+		cout << strerror(errno) << endl;
+		return false;
+	}
+
+	buf_data package_send;
+	char send_buf[1024];
+	while (1)
+	{
+		package_send.clear();
+		ret = read(file_fd, package_send.buf, sizeof(package_send.buf));
+		if (ret <= 0)
+		{
+			package_send.clear();
+			package_send.type = PUT_NUMBER;
+			package_send.length = 0;
+		      	package_send.end_flag = true;
+			cout << "all send~~"<< endl;
+			memcpy(send_buf, &package_send, sizeof(send_buf));
+			if (send(data_fd, (void*)&package_send, sizeof(package_send), 0) < 0)
+			      cout << strerror(errno) << endl;
+			break;
+		}
+		package_send.length = ret;
+//测试代码
+		cout << "read " << ret << endl;
+//测试代码
+		memcpy(send_buf, &package_send, sizeof(send_buf));
+		ret = send(data_fd, send_buf, sizeof(send_buf), 0);
+//测试代码
+		cout << "send " << ret << endl;
+//测试代码
+		if (ret < 0)
+		{
+			cout << strerror(errno) << endl;
+			return false;
+		}
+	}
+
+	//恢复路径
+	chdir(now_path);
+
+	if(package_send.end_flag)
+	      return true;
+
 	return false;
 }
 
 bool client_init::dir()
 {
-	return false;
+	//打开文件夹
+	//读取文件名
+	//是目录加斜杠
+	//如果是结束发结束标志
+	char recv_buf[1024];
+	buf_data recv_package;
+	vector<string> try_list;
+	while (1)
+	{
+		int ret = recv(data_fd, recv_buf, sizeof(recv_buf), MSG_WAITALL);
+		if (ret != 1024)
+		{
+			cout << "something wrong..." << endl;
+			return false;
+		}
+		memcpy(&recv_package, recv_buf, sizeof(recv_buf));
+		tool_str::get_file_name(try_list, recv_package);
+
+		if (recv_package.end_flag)
+		{
+			cout << "dir recv completely.." << endl;
+			break;
+		}
+	}
+
+	vector<string>::iterator iter;
+	for ( iter = try_list.begin(); iter != try_list.end(); ++iter)
+	{
+		cout << *iter << endl;
+	}
+
+	return true;
 }
 
 
@@ -245,17 +344,32 @@ int main(int argc, char* argv[])
 	//初期代码从命令行获取
 	//之后从接口类中获得
 	client_init client;
-	if (argc != 3)
+	if (argc != 4)
 	{
 	//	cout << "usage: "<< argv[0] << ' ' << "server_ip" << endl;
 //测试代码
-		cout << "usage: "<< argv[0] << ' ' << "server_ip " << "filename" << endl;
+		cout << "usage: "<< argv[0] << ' ' << "server_ip " << "filename" << "cmd"<< endl;
 //测试代码
 		return 1;
 	}
 	strncpy(client.target_ip, argv[1], strlen(argv[1]));
 	client.target_ip[strlen(argv[1])] = '\0';
 	
+
+	if (strncmp(argv[3], "get", 3) == 0)
+	{
+		client.temp_package.type = GET_NUMBER;
+	}
+	else if (strncmp(argv[3], "put", 3) == 0)
+	{
+		client.temp_package.type = PUT_NUMBER;
+	}
+	else if (strncmp(argv[3], "dir", 3) == 0)
+	{
+		client.temp_package.type = DIR_NUMBER;
+	}
+
+
 	//地址端口什么之类的初始化
 	client.cmd_fd = client.init_addr(true);
 	client.data_fd = client.init_addr(false);

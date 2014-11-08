@@ -61,6 +61,8 @@ class client_init
 		buf_data temp_package;
 		client_init()
 		{
+			flag_first_con = false;
+
 			port_cmd = 12344;
 			port_data = 12345;
 // old way to find the function
@@ -78,7 +80,6 @@ class client_init
 				return this->dir();
 			};
 		}
-
 		//返回值初始化后文件描述符
 	 	int init_addr(bool is_cmd);
 		bool connect_timelimit(int sockfd, struct sockaddr* address, int time, int count);
@@ -88,6 +89,7 @@ class client_init
 		:
 		sockaddr_in cmd_address; 	//服务器地址结构(传命令)
 		sockaddr_in data_address; 	//服务器地址结构(传数据)
+		bool flag_first_con;
 
 		bool get(void);			//下载
 		bool put(void);			//上传
