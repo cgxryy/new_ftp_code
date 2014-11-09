@@ -48,4 +48,6 @@ class tool_str
 	static char* get_str_path(char* str);
 	static void get_file_name(vector<string> &file_container, buf_data &name_package);
 	static char* path_dir(char* old_path);
+
+	static const char* copy_file(char* old_name);
 };

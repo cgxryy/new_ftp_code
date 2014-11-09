@@ -172,10 +172,9 @@ bool client_init::get()
 {
 /*
  * 预留一个类给文件文件管理
- *
  * */
 	mkdir("../ftp_download", 0777);
-
+	//保留程序路径，进入下载路径
 	char now_path[100];
 	getcwd(now_path, 100);
 	int ret = chdir("../ftp_download");
@@ -186,6 +185,7 @@ bool client_init::get()
 
 	cout << temp_package.buf<< endl;
 	cout << basename(temp_package.buf)<< endl;
+	//创建文件准备写入
 	int file_fd = creat(basename(temp_package.buf), 0666);
 	if (file_fd == -1)
 	{
@@ -193,24 +193,36 @@ bool client_init::get()
 		return false;
 	}
 
+	//先接收第一个包，里面有总长度
 	buf_data package_file;
 	char buf_str[MAX_BUF_SIZE];
+	if (recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL) != 1024)
+	{
+		cout << "doesn'n recv the sum_length" << endl;
+		return false;
+	}
+	memcpy(&package_file, buf_str, sizeof(buf_str));
+	sum_len = package_file.sum;
+	download_len = 0;
+	//开始循环收数据写数据
 	do
 	{
 		int ret = recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
+		//接收失败
 		if (ret < 0)
 		{
 			cout << strerror(errno) << endl;
 			return false;
 		}
+		//接收不够一个包
 		if (ret != MAX_BUF_SIZE)
 		{
 			cout << "recv data not full MAX_BUF_SIZE error"<< endl;
 			return false;
 		}
 		cout << "recv: " << ret << endl;
-
-
+		
+		//读取缓存区，按有效长度读数据
 		memcpy(&package_file, buf_str, sizeof(buf_str));
 		ret = write(file_fd, package_file.buf, package_file.length);
 		if (ret < 0)
@@ -219,15 +231,15 @@ bool client_init::get()
 			return false;
 		}
 		cout << "write: " << ret << endl;
-
+		download_len += ret;
+		
+		cout << "\t\t\t\t" << download_len/sum_len*100 << "%..........." << endl;
+		//当监测到结束包时退出循环
 		if (package_file.end_flag)
 		{
 			cout << "file has download completely..." << endl;
 			break;
 		}
-	//测试代码
-		cout << "recv data: " << ret << endl;
-	//测试代码	
 	}while(1);
 
 	chdir(now_path);
@@ -242,12 +254,8 @@ bool client_init::put()
 	char now_path[MAX_BUFFER];
 	getcwd(now_path, sizeof(now_path));
 
-//预留一个类给处理路径， 确保文件都在一个指定文件夹不会越权
-// "/home"->"./home"  去掉..
-	cout << "before change:  " << temp_package.buf << endl;
-
 	//打开文件，准备读取
-	int file_fd = open(temp_package.buf, O_RDWR, 0644);
+	int file_fd = open64(temp_package.buf, O_RDWR, 0644);
 	cout << "package.buf:   " << temp_package.buf << endl;
 	if (file_fd < 0)
 	{
@@ -255,8 +263,14 @@ bool client_init::put()
 		return false;
 	}
 
+	//发送第一个包，包含总数据
 	buf_data package_send;
 	char send_buf[MAX_BUF_SIZE];
+	struct stat64 file_mode;
+	stat64(temp_package.buf, &file_mode);
+	sum_len = file_mode.st_size;
+	upload_len = 0;
+
 	while (1)
 	{
 		package_send.clear();
@@ -268,9 +282,8 @@ bool client_init::put()
 			package_send.length = 0;
 		      	package_send.end_flag = true;
 			memcpy(send_buf, &package_send, sizeof(send_buf));
+			send(data_fd, send_buf, sizeof(send_buf), 0);
 			cout << "all send~~"<< endl;
-			if (send(data_fd, (void*)&package_send, sizeof(package_send), 0) < 0)
-			      cout << strerror(errno) << endl;
 			break;
 		}
 		package_send.length = ret;
@@ -287,14 +300,21 @@ bool client_init::put()
 			cout << strerror(errno) << endl;
 			return false;
 		}
+		upload_len += ret;
+
+		if (upload_len-sum_len < 0)
+		      cout << "total :" << upload_len/sum_len*100 << "%......." << endl;
+		else
+		      cout << "total :" << 100 << "%......." << endl;
 	}
 
 	//恢复路径
 	chdir(now_path);
 
+	cout << "put completely..." << endl;
+
 	if(package_send.end_flag)
 	      return true;
-
 	return false;
 }
 

@@ -16,13 +16,14 @@ const int DIR_NUMBER = 4;
 const int MAX_NUMBER = 4;
 
 //包中数据大小 
-const int MAX_BUFFER = 1014;
+const int MAX_BUFFER = 1006;
 
 //自定义包结构
 struct buf_data
 {
 	int32_t type; 	//包的类型 get put dir 
 	int32_t length; //包的长度 0~1014
+	double  sum;
 	bool 	end_flag;
 	bool 	ack_flag;
 	char 	buf[MAX_BUFFER]; //1024-4-4-2 = 1014

@@ -53,12 +53,16 @@ class client_init
 		int port_data;
 
 		char target_ip[INET_ADDRSTRLEN];//目标服务器ip
-	
+		
+		buf_data temp_package;
+		double sum_len;
+		double download_len;
+		double upload_len;
+
 // 		old way to find the function
 //  		unordered_map<int, bool (client_init::*)(void)> fun_list;
 		unordered_map<int, function<bool(void)>> fun_list;
-
-		buf_data temp_package;
+		
 		client_init()
 		{
 			flag_first_con = false;

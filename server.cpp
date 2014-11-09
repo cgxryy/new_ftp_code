@@ -61,9 +61,9 @@ int server_init::init_fd_addr(bool is_wifi, bool is_cmd)
 	int ret = 0;
 	bzero(address, sizeof(cmd_address));
 	address->sin_family = AF_INET;
-	const char* target_ip = get_ip(is_wifi);
+//	const char* target_ip = get_ip(is_wifi);
 //测试代码
-//	const char* target_ip = "127.0.0.1";
+	const char* target_ip = "127.0.0.1";
 //测试代码
 	cout << target_ip << endl;
 
@@ -183,8 +183,8 @@ bool client_data::get()
 	char now_path[MAX_BUFFER];
 	getcwd(now_path, sizeof(now_path));
 
-//预留一个类给处理路径， 确保文件都在一个指定文件夹不会越权
-// "/home"->"./home"  去掉..
+	//预留一个类给处理路径， 确保文件都在一个指定文件夹不会越权
+	// "/home" -> "./home"   去掉".."
 	cout << "before change:  " << package.buf << endl;
 	char* change;
 	if ((change = tool_str::path_change(package.buf)) == NULL)
@@ -197,7 +197,7 @@ bool client_data::get()
 	cout << "package length: " << package.length << endl;
 	cout << change << endl;
 
-
+	
 	mkdir("../ftp_source", 0777);
 	ret = chdir("../ftp_source");
 	if (ret < 0)
@@ -219,6 +219,18 @@ bool client_data::get()
 
 	buf_data package_send;
 	char send_buf[MAX_BUF_SIZE];
+	//获取文件总大小发送(显示进度条)第一个包
+	struct stat64 file_mode64;
+	stat64(package.buf, &file_mode64);
+	package_send.sum = file_mode64.st_size;
+	memcpy(send_buf, &package_send, sizeof(send_buf));
+	if (send(data_fd, send_buf, sizeof(send_buf), 0) < 0)
+	{
+		cout << "something wrong with send, line:" << __LINE__ << endl;
+		return false;
+	}
+
+	//开始发送正式数据
 	while (1)
 	{
 		package_send.clear();
@@ -230,6 +242,7 @@ bool client_data::get()
 			package_send.length = 0;
 		      	package_send.end_flag = true;
 			memcpy(send_buf, &package_send, sizeof(send_buf));
+			cout << "package send all..." << endl;
 			if (send(data_fd, send_buf, sizeof(send_buf), 0) < 0)
 			      cout << strerror(errno) << endl;
 			break;
@@ -277,52 +290,57 @@ bool client_data::put()
 	}
 
 	int file_fd = creat(basename(package.buf), 0666);
-	if (file_fd == -1)
+	if (file_fd < 0)
 	{
-		cout << "open error " << strerror(errno) << endl;
-		return false;
+		string name_copy;
+		name_copy = tool_str::copy_file(basename(package.buf));
+		file_fd = creat(name_copy.c_str(), 0666);
+		if (name_copy.empty())
+		{
+			cout << "open error " << strerror(errno) << endl;
+			return false;
+		}
 	}
 
+	//不断接收数据
 	buf_data package_file;
 	char buf_str[MAX_BUF_SIZE];
-	char* ptr = buf_str;
-	char* end = &buf_str[MAX_BUF_SIZE-1];
+//	char* ptr = buf_str;
+//	char* end = &buf_str[MAX_BUF_SIZE-1];
 	do
 	{
-//		int ret = recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
-		//instead of recv(MSG_WAITALL)
-		int ret = read(data_fd, ptr, end-ptr+1);
-		if (ret < 0 && errno != EAGAIN)
+//		int ret = read(data_fd, ptr, end-ptr+1);
+		int ret = recv(data_fd, buf_str, sizeof(buf_str), MSG_WAITALL);
+//		if (ret < 0 && errno != EAGAIN)
+		if (ret != 1024)
 		{
 			cout << "ret < 0 " << __LINE__ << endl;
 			cout << strerror(errno)  << __LINE__ << endl;
 			return false;
 		}
-		ptr = ptr + ret;
-		if (ptr - end >= 0)
+		cout << "1024开始写入" << endl;
+		memcpy(&package_file, buf_str, sizeof(buf_str));
+		ret = write(file_fd, package_file.buf, package_file.length);
+		if (ret < 0)
 		{
-			ptr = buf_str;
-			cout << "MAX_BUF_SIZE" << endl;
-			memcpy(&package_file, buf_str, sizeof(buf_str));
-			ret = write(file_fd, package_file.buf, package_file.length);
-			if (ret < 0)
-			{
-				cout << "ret < 0 " << __LINE__ << endl;
-				cout << strerror(errno)  << __LINE__ << endl;
-				return false;
-			}
-			cout << "write" << ret << endl;
-			
-			if (package_file.end_flag)
-			{
-				cout << "file has be put completely..." << endl;
-				break;
-			}
+			cout << "ret < 0 " << __LINE__ << endl;
+			cout << strerror(errno)  << __LINE__ << endl;
+			return false;
 		}
+		cout << "write" << ret << endl;
+		
+		if (package_file.end_flag)
+		{
+			cout << "file has be put completely..." << endl;
+			break;
+		}
+//		}
 	}while (1);
 
 	chdir(now_path);
 
+	if (package_file.end_flag)
+		return true;
 	return false;
 }
 
